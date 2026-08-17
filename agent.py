@@ -1,93 +1,330 @@
-from collections import defaultdict
-
-class SimpleReflexAgent:
-    def sense_and_act(self, percept):
-        if percept.get('food_here'):
-            return 'suck'
-        elif percept.get('wall_ahead'):
-            return 'turn_left'
-        else:
-            return 'move_forward'
+from collections import deque
+import heapq
 
 
-class ModelBasedAgent:
+class SearchAgent:
+    """
+    Search Agent implementing:
+    - Breadth-First Search (BFS)
+    - Depth-First Search (DFS)
+    - Uniform-Cost Search (UCS)
+
+    The agent creates an offline plan to reach food
+    and then executes that plan one action at a time.
+    """
+
     def __init__(self):
-        self.visit_counts = defaultdict(int)
-        self.known_walls = set()
-        self.current_pos = (0, 0)
-        self.facing = 'Up'
-        self.last_action = None
-
-    def get_visit_count(self, cell):
-        if cell in self.known_walls:
-            return 999999
-        return self.visit_counts[cell]
-
-    def sense_and_act(self, percept):
-        dirs = ['Up', 'Right', 'Down', 'Left']
-        dir_offsets = {
-            'Up': (0, 1),
-            'Right': (1, 0),
-            'Down': (0, -1),
-            'Left': (-1, 0)
+        # Available actions and their movement directions
+        self.actions = {
+            "Up": (0, 1),
+            "Down": (0, -1),
+            "Left": (-1, 0),
+            "Right": (1, 0)
         }
 
-        if self.last_action == 'turn_left':
-            idx = dirs.index(self.facing)
-            self.facing = dirs[(idx - 1) % 4]
-        elif self.last_action == 'turn_right':
-            idx = dirs.index(self.facing)
-            self.facing = dirs[(idx + 1) % 4]
-        elif self.last_action == 'move_forward':
-            dx, dy = dir_offsets[self.facing]
-            self.current_pos = (self.current_pos[0] + dx, self.current_pos[1] + dy)
+        # Step 1.3:
+        # Store the planned sequence of actions
+        self.plan = []
 
-        self.visit_counts[self.current_pos] += 1
+        # Select the search algorithm
+        # Change this to "DFS" or "UCS" to compare algorithms
+        self.active_algo = "BFS"
 
-        idx = dirs.index(self.facing)
-        front_dir = dirs[idx]
-        left_dir = dirs[(idx - 1) % 4]
-        right_dir = dirs[(idx + 1) % 4]
+    # ---------------------------------------------------------
+    # Get valid neighboring states
+    # ---------------------------------------------------------
 
-        fx, fy = dir_offsets[front_dir]
-        lx, ly = dir_offsets[left_dir]
-        rx, ry = dir_offsets[right_dir]
+    def get_neighbors(self, state, grid_size, walls):
 
-        front_cell = (self.current_pos[0] + fx, self.current_pos[1] + fy)
-        left_cell = (self.current_pos[0] + lx, self.current_pos[1] + ly)
-        right_cell = (self.current_pos[0] + rx, self.current_pos[1] + ry)
+        x, y = state
+        width, height = grid_size
 
-        if percept.get('wall_ahead'):
-            self.known_walls.add(front_cell)
+        neighbors = []
 
-        if percept.get('food_here'):
-            action = 'suck'
-        elif percept.get('wall_ahead'):
-            left_count = self.get_visit_count(left_cell)
-            right_count = self.get_visit_count(right_cell)
-            if left_count < right_count:
-                action = 'turn_left'
+        for action, (dx, dy) in self.actions.items():
+
+            new_x = x + dx
+            new_y = y + dy
+
+            # Check grid boundaries
+            if new_x < 0 or new_x >= width:
+                continue
+
+            if new_y < 0 or new_y >= height:
+                continue
+
+            new_state = (new_x, new_y)
+
+            # Do not move through walls
+            if new_state in walls:
+                continue
+
+            # Every action has cost 1
+            neighbors.append(
+                (new_state, action, 1)
+            )
+
+        return neighbors
+
+    # ---------------------------------------------------------
+    # BFS
+    # ---------------------------------------------------------
+
+    def bfs_search(self, start, goals, grid_size, walls):
+
+        frontier = deque()
+
+        # State + action path
+        frontier.append(
+            (start, [])
+        )
+
+        # Graph Search reached set
+        reached = {start}
+
+        while frontier:
+
+            state, path = frontier.popleft()
+
+            # Goal test
+            if state in goals:
+                return path
+
+            for next_state, action, cost in self.get_neighbors(
+                state,
+                grid_size,
+                walls
+            ):
+
+                if next_state not in reached:
+
+                    reached.add(next_state)
+
+                    new_path = path + [action]
+
+                    frontier.append(
+                        (next_state, new_path)
+                    )
+
+        return []
+
+    # ---------------------------------------------------------
+    # DFS
+    # ---------------------------------------------------------
+
+    def dfs_search(self, start, goals, grid_size, walls):
+
+        frontier = []
+
+        frontier.append(
+            (start, [])
+        )
+
+        # Graph Search reached set
+        reached = {start}
+
+        while frontier:
+
+            state, path = frontier.pop()
+
+            # Goal test
+            if state in goals:
+                return path
+
+            for next_state, action, cost in self.get_neighbors(
+                state,
+                grid_size,
+                walls
+            ):
+
+                if next_state not in reached:
+
+                    reached.add(next_state)
+
+                    new_path = path + [action]
+
+                    frontier.append(
+                        (next_state, new_path)
+                    )
+
+        return []
+
+    # ---------------------------------------------------------
+    # UCS
+    # ---------------------------------------------------------
+
+    def ucs_search(self, start, goals, grid_size, walls):
+
+        frontier = []
+
+        # Priority Queue:
+        # (path_cost, state, path)
+        heapq.heappush(
+            frontier,
+            (0, start, [])
+        )
+
+        # Cheapest known cost for each state
+        reached = {
+            start: 0
+        }
+
+        while frontier:
+
+            cost, state, path = heapq.heappop(frontier)
+
+            # Goal test
+            if state in goals:
+                return path
+
+            for next_state, action, step_cost in self.get_neighbors(
+                state,
+                grid_size,
+                walls
+            ):
+
+                new_cost = cost + step_cost
+
+                if (
+                    next_state not in reached
+                    or new_cost < reached[next_state]
+                ):
+
+                    reached[next_state] = new_cost
+
+                    new_path = path + [action]
+
+                    heapq.heappush(
+                        frontier,
+                        (
+                            new_cost,
+                            next_state,
+                            new_path
+                        )
+                    )
+
+        return []
+
+    # ---------------------------------------------------------
+    # Step 1.3 - Sense and Act
+    # ---------------------------------------------------------
+
+    def sense_and_act(self, percept):
+
+        # If there is no current plan,
+        # create a new plan.
+        if not self.plan:
+
+            # Current agent position
+            start = tuple(percept["agent_pos"])
+
+            # Get all available food
+            all_food = [
+                tuple(food)
+                for food in percept["all_food"]
+            ]
+
+            # If there is no food left,
+            # there is nothing to plan.
+            if not all_food:
+                return "Up"
+
+            # Global environment information
+            grid_size = percept["grid_size"]
+
+            walls = {
+                tuple(wall)
+                for wall in percept["walls"]
+            }
+
+            # -------------------------------------------------
+            # Find the closest food pellet
+            # -------------------------------------------------
+
+            closest_food = None
+            shortest_distance = float("inf")
+
+            for food in all_food:
+
+                distance = abs(
+                    start[0] - food[0]
+                ) + abs(
+                    start[1] - food[1]
+                )
+
+                if distance < shortest_distance:
+
+                    shortest_distance = distance
+                    closest_food = food
+
+            # Search expects a set of goal states
+            goals = {closest_food}
+
+            # -------------------------------------------------
+            # Select the active search algorithm
+            # -------------------------------------------------
+
+            if self.active_algo == "BFS":
+
+                self.plan = self.bfs_search(
+                    start,
+                    goals,
+                    grid_size,
+                    walls
+                )
+
+            elif self.active_algo == "DFS":
+
+                self.plan = self.dfs_search(
+                    start,
+                    goals,
+                    grid_size,
+                    walls
+                )
+
+            elif self.active_algo == "UCS":
+
+                self.plan = self.ucs_search(
+                    start,
+                    goals,
+                    grid_size,
+                    walls
+                )
+
             else:
-                action = 'turn_right'
-        else:
-            front_count = self.get_visit_count(front_cell)
-            left_count = self.get_visit_count(left_cell)
-            right_count = self.get_visit_count(right_cell)
 
-            if front_count == 0:
-                action = 'move_forward'
-            elif left_count == 0:
-                action = 'turn_left'
-            elif right_count == 0:
-                action = 'turn_right'
-            else:
-                min_count = min(front_count, left_count, right_count)
-                if min_count == front_count:
-                    action = 'move_forward'
-                elif min_count == left_count:
-                    action = 'turn_left'
-                else:
-                    action = 'turn_right'
+                raise ValueError(
+                    f"Unknown search algorithm: {self.active_algo}"
+                )
 
-        self.last_action = action
-        return action
+            # Print the generated plan
+            print(
+                f"\nAlgorithm: {self.active_algo}"
+            )
+
+            print(
+                f"Start: {start}"
+            )
+
+            print(
+                f"Goal: {closest_food}"
+            )
+
+            print(
+                f"Generated Plan: {self.plan}"
+            )
+
+            print(
+                f"Plan Length: {len(self.plan)}"
+            )
+
+        # -----------------------------------------------------
+        # Execute the plan one action at a time
+        # -----------------------------------------------------
+
+        if self.plan:
+
+            return self.plan.pop(0)
+
+        # No valid plan
+        return "Up"
